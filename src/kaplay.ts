@@ -1,9 +1,9 @@
-const VERSION = "3001.0.0";
+// the definitive version! :bean:
+const VERSION = "4000.0.0";
 
-import { type App, type ButtonsDef, initApp } from "./app";
+import { type ButtonsDef, initApp } from "./app";
 
 import {
-    type AppGfxCtx,
     center,
     drawBezier,
     drawCircle,
@@ -59,6 +59,7 @@ import {
     loadBean,
     loadBitmapFont,
     loadFont,
+    loadHappy,
     loadJSON,
     loadMusic,
     loadPedit,
@@ -78,7 +79,7 @@ import {
     ASCII_CHARS,
     BG_GRID_SIZE,
     DBG_FONT,
-    DEF_HASH_GRID_SIZE,
+    EVENT_CANCEL_SYMBOL,
     LOG_MAX,
     MAX_TEXT_CACHE_SIZE,
 } from "./constants";
@@ -134,7 +135,6 @@ import {
     Rect,
     rgb,
     RNG,
-    sat,
     shuffle,
     SweepAndPrune,
     testCirclePolygon,
@@ -230,7 +230,7 @@ import {
 } from "./components";
 
 import { dt, fixedDt, restDt } from "./app";
-import { burp, initAudio, play, volume } from "./audio";
+import { burp, getVolume, initAudio, play, setVolume, volume } from "./audio";
 
 import {
     addKaboom,
@@ -241,13 +241,21 @@ import {
     camScale,
     camTransform,
     destroy,
+    flash,
+    getCamPos,
+    getCamRot,
+    getCamScale,
+    getCamTransform,
+    getDefaultLayer,
     getGravity,
     getGravityDirection,
+    getLayers,
     getSceneName,
     getTreeRoot,
     go,
     initEvents,
     initGame,
+    KeepFlags,
     layers,
     make,
     on,
@@ -268,15 +276,25 @@ import {
     onLoading,
     onResize,
     onSceneLeave,
+    onTag,
+    onUntag,
+    onUnuse,
     onUpdate,
+    onUse,
     scene,
+    setCamPos,
+    setCamRot,
+    setCamScale,
     setGravity,
     setGravityDirection,
+    setLayers,
     shake,
     toScreen,
     toWorld,
+    trigger,
 } from "./game";
 
+import { LCEvents, system } from "./game/systems";
 import boomSpriteSrc from "./kassets/boom.png";
 import kaSpriteSrc from "./kassets/ka.png";
 
@@ -297,6 +315,16 @@ export const _k = {
     gscale: null,
     kaSprite: null,
     boomSprite: null,
+    systems: [], // all systems added
+    // we allocate systems
+    systemsByEvent: [
+        [], // afterDraw
+        [], // afterFixedUpdate
+        [], // afterUpdate
+        [], // beforeDraw
+        [], // beforeFixedUpdate
+        [], // beforeUpdate
+    ],
 } as unknown as KAPLAYInternal;
 
 /**
@@ -457,12 +485,17 @@ const kaplay = <
     _k.gfx = gfx;
     const audio = initAudio();
     _k.audio = audio;
-    const assets = initAssets(ggl);
+    const assets = initAssets(ggl, gopt.spriteAtlasPadding ?? 0);
     _k.assets = assets;
     const game = initGame();
     _k.game = game;
 
     game.root.use(timer());
+
+    system("collision", checkFrame, [
+        LCEvents.AfterFixedUpdate,
+        LCEvents.AfterUpdate,
+    ]);
 
     function makeCanvas(w: number, h: number) {
         const fb = new FrameBuffer(ggl, w, h);
@@ -481,7 +514,9 @@ const kaplay = <
                 flush();
                 fb.unbind();
             },
-            get fb() { return fb; }
+            get fb() {
+                return fb;
+            },
         };
     }
 
@@ -828,19 +863,29 @@ const kaplay = <
         if (!sapInit) {
             sapInit = true;
             onAdd(obj => {
-                if (obj.is("area")) {
+                if (obj.has("area")) {
                     sap.add(obj as GameObj<AreaComp>);
                 }
             });
             onDestroy(obj => {
                 sap.remove(obj as GameObj<AreaComp>);
             });
+            onUse((obj, id) => {
+                if (id === "area") {
+                    sap.add(obj as GameObj<AreaComp>);
+                }
+            });
+            onUnuse((obj, id) => {
+                if (id === "area") {
+                    sap.remove(obj as GameObj<AreaComp>);
+                }
+            });
             onSceneLeave(scene => {
                 sapInit = false;
                 sap.clear();
             });
             for (const obj of get("*", { recursive: true })) {
-                if (obj.is("area")) {
+                if (obj.has("area")) {
                     sap.add(obj as GameObj<AreaComp>);
                 }
             }
@@ -1054,8 +1099,25 @@ const kaplay = <
         () => {
             try {
                 if (assets.loaded) {
-                    if (!debug.paused) fixedUpdateFrame();
-                    checkFrame();
+                    if (!debug.paused) {
+                        for (
+                            const sys of _k
+                                .systemsByEvent[LCEvents.BeforeFixedUpdate]
+                        ) {
+                            sys.run();
+                        }
+
+                        fixedUpdateFrame();
+
+                        for (
+                            const sys of _k
+                                .systemsByEvent[LCEvents.AfterFixedUpdate]
+                        ) {
+                            sys.run();
+                        }
+                    }
+
+                    // checkFrame();
                 }
             } catch (e) {
                 handleErr(e as Error);
@@ -1085,11 +1147,36 @@ const kaplay = <
                     frameEnd();
                 }
                 else {
-                    if (!debug.paused) updateFrame();
-                    checkFrame();
+                    if (!debug.paused) {
+                        for (
+                            const sys of _k
+                                .systemsByEvent[LCEvents.BeforeUpdate]
+                        ) {
+                            sys.run();
+                        }
+                        updateFrame();
+
+                        for (
+                            const sys of _k.systemsByEvent[LCEvents.AfterUpdate]
+                        ) {
+                            sys.run();
+                        }
+                    }
+
+                    // checkFrame();
                     frameStart();
+
+                    for (const sys of _k.systemsByEvent[LCEvents.BeforeDraw]) {
+                        sys.run();
+                    }
+
                     drawFrame();
                     if (gopt.debug !== false) drawDebug();
+
+                    for (const sys of _k.systemsByEvent[LCEvents.AfterDraw]) {
+                        sys.run();
+                    }
+
                     frameEnd();
                 }
 
@@ -1127,6 +1214,7 @@ const kaplay = <
         loadAseprite,
         loadPedit,
         loadBean,
+        loadHappy: loadHappy,
         loadJSON,
         load,
         getSound,
@@ -1165,6 +1253,14 @@ const kaplay = <
         onError,
         onCleanup,
         // misc
+        flash: flash,
+        setCamPos: setCamPos,
+        getCamPos: getCamPos,
+        setCamRot: setCamRot,
+        getCamRot: getCamRot,
+        setCamScale: setCamScale,
+        getCamScale: getCamScale,
+        getCamTransform: getCamTransform,
         camPos,
         camScale,
         camFlash,
@@ -1241,12 +1337,17 @@ const kaplay = <
         pathfinder,
         fakeMouse,
         // group events
-        on,
+        trigger,
+        on: on as KAPLAYCtx["on"], // our internal on should be strict, user shouldn't
         onFixedUpdate,
         onUpdate,
         onDraw,
         onAdd,
         onDestroy,
+        onUse,
+        onUnuse,
+        onTag,
+        onUntag,
         onClick,
         onCollide,
         onCollideUpdate,
@@ -1305,6 +1406,8 @@ const kaplay = <
         wait,
         // audio
         play,
+        setVolume: setVolume,
+        getVolume: getVolume,
         volume,
         burp,
         audioCtx: audio.ctx,
@@ -1406,7 +1509,10 @@ const kaplay = <
         go,
         onSceneLeave,
         // layers
-        layers,
+        layers: layers,
+        getLayers: getLayers,
+        setLayers: setLayers,
+        getDefaultLayer: getDefaultLayer,
         // level
         addLevel,
         // storage
@@ -1418,6 +1524,7 @@ const kaplay = <
         downloadBlob,
         // plugin
         plug,
+        system,
         // char sets
         ASCII_CHARS,
         // dom
@@ -1443,6 +1550,8 @@ const kaplay = <
         KEvent,
         KEventHandler,
         KEventController,
+        KeepFlags,
+        cancel: () => EVENT_CANCEL_SYMBOL,
     };
 
     _k.k = ctx;

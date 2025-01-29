@@ -131,13 +131,16 @@ export interface AreaComp extends Comp {
      *
      * @since v2001.0
      */
-    onCollide(tag: Tag, f: (obj: GameObj, col?: Collision) => void): void;
+    onCollide(
+        tag: Tag,
+        f: (obj: GameObj, col?: Collision) => void,
+    ): KEventController;
     /**
      * Register an event runs once when collide with another game obj.
      *
      * @since v2000.1
      */
-    onCollide(f: (obj: GameObj, col?: Collision) => void): void;
+    onCollide(f: (obj: GameObj, col?: Collision) => void): KEventController;
     /**
      * Register an event runs every frame when collide with another game obj with certain tag.
      *
@@ -145,7 +148,7 @@ export interface AreaComp extends Comp {
      */
     onCollideUpdate(
         tag: Tag,
-        f: (obj: GameObj, col?: Collision) => void,
+        f: (obj: GameObj, col?: Collision) => KEventController,
     ): KEventController;
     /**
      * Register an event runs every frame when collide with another game obj.
@@ -249,6 +252,7 @@ let fakeMouseChecked = false;
 export function area(opt: AreaCompOpt = {}): AreaComp {
     const colliding: Record<string, Collision> = {};
     const collidingThisFrame = new Set();
+    const events: KEventController[] = [];
 
     if (!fakeMouse && !fakeMouseChecked) {
         fakeMouse = _k.k.get<FakeMouseComp | PosComp>("fakeMouse")[0];
@@ -264,10 +268,12 @@ export function area(opt: AreaCompOpt = {}): AreaComp {
         add(this: GameObj<AreaComp>) {
             areaCount++;
             if (this.area.cursor) {
-                this.onHover(() => _k.app.setCursor(this.area.cursor!));
+                events.push(
+                    this.onHover(() => _k.app.setCursor(this.area.cursor!)),
+                );
             }
 
-            this.onCollideUpdate((obj, col) => {
+            events.push(this.onCollideUpdate((obj, col) => {
                 if (!obj.id) {
                     throw new Error("area() requires the object to have an id");
                 }
@@ -280,11 +286,14 @@ export function area(opt: AreaCompOpt = {}): AreaComp {
 
                 colliding[obj.id] = col;
                 collidingThisFrame.add(obj.id);
-            });
+            }));
         },
 
         destroy() {
             areaCount--;
+            for (const event of events) {
+                event.cancel();
+            }
         },
 
         fixedUpdate(this: GameObj<AreaComp>) {
@@ -420,8 +429,8 @@ export function area(opt: AreaCompOpt = {}): AreaComp {
                     action();
                 }
             });
+            events.push(e);
 
-            this.onDestroy(() => e.cancel());
             return e;
         },
 

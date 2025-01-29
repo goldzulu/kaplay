@@ -1,3 +1,5 @@
+import { EVENT_CANCEL_SYMBOL } from "../constants";
+
 export class Registry<T> extends Map<number, T> {
     private lastID: number = 0;
     push(v: T): number {
@@ -64,14 +66,19 @@ export class KEventController {
 }
 
 export class KEvent<Args extends any[] = any[]> {
-    private handlers: Registry<(...args: Args) => void> = new Registry();
+    private cancellers: WeakMap<(...args: Args) => unknown, () => void> =
+        new WeakMap();
+    private handlers: Registry<(...args: Args) => unknown> = new Registry();
 
-    add(action: (...args: Args) => void): KEventController {
-        const cancel = this.handlers.pushd((...args: Args) => {
+    add(action: (...args: Args) => unknown): KEventController {
+        function handler(...args: Args) {
             if (ev.paused) return;
-            action(...args);
-        });
+            return action(...args);
+        }
+
+        const cancel = this.handlers.pushd(handler);
         const ev = new KEventController(cancel);
+        this.cancellers.set(handler, cancel);
         return ev;
     }
     addOnce(
@@ -87,7 +94,17 @@ export class KEvent<Args extends any[] = any[]> {
         return new Promise((res) => this.addOnce(res));
     }
     trigger(...args: Args) {
-        this.handlers.forEach((action) => action(...args));
+        this.handlers.forEach((action) => {
+            const result = action(...args);
+            let cancel;
+
+            if (
+                result === EVENT_CANCEL_SYMBOL
+                && (cancel = this.cancellers.get(action))
+            ) {
+                cancel();
+            }
+        });
     }
     numListeners(): number {
         return this.handlers.size;
@@ -111,7 +128,6 @@ export class KEventHandler<EventMap extends Record<string, any[]>> {
             >;
         }
     > = {};
-
     on<Name extends keyof EventMap>(
         name: Name,
         action: (...args: EventMap[Name]) => void,

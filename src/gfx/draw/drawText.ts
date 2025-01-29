@@ -67,6 +67,11 @@ export type DrawTextOpt = RenderProps & {
      * @since v2000.2
      */
     styles?: Record<string, CharTransform | CharTransformFunc>;
+    /**
+     * If true, any (whitespace) indent on the first line of the paragraph
+     * will be copied to all of the lines for those parts that text-wrap.
+     */
+    indentAll?: boolean;
 };
 
 /**
@@ -109,6 +114,13 @@ export interface CharTransform {
      * For example, an opacity of 0.4 with 2 set in the transformation, the resulting opacity will be 0.8 (0.4 × 2).
      */
     opacity?: number;
+
+    /**
+     * If true, the styles applied by this specific {@link DrawTextOpt.styles} entry transform
+     * will override, rather than compose with, the default styles given in {@link DrawTextOpt.transform} and by other
+     * components' styles.
+     */
+    override?: boolean;
 }
 
 /**

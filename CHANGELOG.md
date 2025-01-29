@@ -1,28 +1,224 @@
-# v4000.0.0
+# Changelog
 
-- Added clipLineToRect
-- Replaced the Separating Axis Theorem (SAT) with the Gilbert–Johnson–Keerthi
-  (GJK) distance algorithm.
-- Added circle and (rotated) ellipse collision shapes.
+All notable changes to this project will be documented in this file.
+
+The format is (mostly) based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [4000.0.0] - TBD
+
+### Added
+
 - Added `ellipse()` component.
-- Circle area is no longer a box.
-- Added restitution and friction.
-- Added a fake cursor API.
+- Added circle and (rotated) ellipse collision shapes.
+- Added `clipLineToRect()`
+- Added support to circle shapes in `area()`.
+- Added `obj.setParent()` to change the parent of a game object.
+- Added `fakeMouse()` to create a fake mouse cursor.
+
   ```js
-  const myCursor = add([
-      fakeMouse(),
-      sprite("kat"),
-      pos(100, 100),
-  ]);
+  const myCursor = add([fakeMouse(), sprite("kat"), pos(100, 100)]);
 
   myCursor.press(); // trigger onClick events if the mouse is over
   myCursor.release();
   myCursor.move(vec2(100, 200)); // move as your wish
   ```
+- Added restitution and friction.
+- Added `k.system()` to replace internal events or create new.
 
-# v4000.0.0 and v3001.0.0
+  ```js
+  system("collision", () => {
+    // system code
+  }, [LCEvents.AfterFixedUpdate, LCEvents.AfterUpdate]),
+  ```
+- Added LCEvents enum for identify different lifecycle events.
 
-## Input
+### Changed
+
+- Replaced the Separating Axis Theorem (SAT) with the "Gilbert–Johnson–Keerthi"
+  (`GJK`) distance algorithm.
+- Changed default behaviour of `kaplay({ tagsAsComponents: false })` to `false`.
+- Now if you pass a nullish value to `.use()` it throws an error
+
+## [3001.0.10] "Happy Colors" - TBD
+
+### Added
+
+- Added **CSS Colors!** 🎨 **(experimental)** - @lajbel (based on
+  @dragoncoder047 idea)
+
+  ```js
+  color("slateblue");
+  color("red");
+  color("wheat");
+  color("tomato"); // yum!
+  ```
+
+- Added `loadHappy()` font to load a default font, happy :D - @lajbel
+
+  ```js
+  kaplay({ font: "happy" });
+  loadHappy();
+
+  add([
+      text("ohhi"),
+  ]);
+  ```
+
+- Added a new option in `LoadSpriteOpt` for loading sprites in an individual
+  spritesheet - @chqs-git
+  ```js
+  loadSprite(
+      "player",
+      "sprites/player.png",
+      {
+          singular: true,
+      },
+  );
+  ```
+
+### Fixed
+
+- Fixed a bug where args were not being passed to global `trigger()` - @lajbel
+
+## [3001.0.9] - 2025-01-15
+
+### Added
+
+- **(examples)** Added a new `particle` example! - @lajbel
+
+### Changed
+
+- Improved `lifespan()` explanation - @lajbel
+- **(examples)** `particle` example renamed to `lifespan` - @lajbel
+
+### Fixed
+
+- Fixed a bug where `lifespan()` was working incorrectly - @lajbel
+
+## [3001.0.8] - 2025-01-15
+
+### Fixed
+
+- Fixed a bug where alpha channel wasn't correctly setted - @mflerackers
+
+## [3001.0.7] - 2025-01-15
+
+### Added
+
+- Added `kaplay({ sprit`e`AtlasPadding })` for setting the space between the
+  sprites in the sprite atlas - @marianyp
+
+```js
+kaplay({
+    spriteAtlasPadding: 10, // 10 pixels of space between each sprite
+});
+```
+
+### Changed
+
+- Now you cannot pass parameters that are not a component or string to `.use()`.
+  Otherwise it will throw an error - @lajbel
+
+### Fixed
+
+- Fixed a bug where font atlas were working strange - @mflerackers
+
+## [3001.0.6] "Santa Events" - 2024-12-27
+
+### Added
+
+- Added `trigger(event, tag, ...args)` for global triggering events on a
+  specific tag (**experimental**) - @lajbel
+
+  ```js
+  trigger("shoot", "target", 140);
+
+  on("shoot", "target", (obj, score) => {
+      obj.destroy();
+      debug.log(140); // every bomb was 140 score points!
+  });
+  ```
+
+- Added `{ override?: true }` in `CharTransform` for overridding text styles -
+  @dragoncoder047
+
+  ```js
+  add([
+      pos(100, 150),
+      text("With override: Hello [foo]styled[/foo] text", {
+          transform: {
+              color: BLACK, // Default text color for every character
+          },
+          styles: {
+              foo: {
+                  color: RED, // [foo] will be red
+                  override: true, // will override the black def color
+              },
+          },
+      }),
+  ]);
+  ```
+
+- Added `{ indentAll?: boolean }` in `TextCompOpt` to indent every new line -
+  @dragoncoder047
+
+- Added TypeScript definition for all App Events and missing Game Object
+  Events - @lajbel
+
+### Fixed
+
+- Fixed an incorrect mention to the component in `TextInputComp` type -
+  @dragoncoder047
+
+## [3001.0.5] - 2024-12-18
+
+### Added
+
+- Added tags and components separation in `KAPLAYOpt.tagsAsComponents`
+  (**experimental**)
+- Added `.is()`, `.tag()` and `.untag()` to `GameObjRaw`, check, add and remove
+  (**experimental**)
+- Added `.has()` to `GameObjRaw`, to check if a game object has a component tags
+  (**experimental**)
+- Added events for listen to comps being removed or added `onUse()` and
+  `onUnused()` (**experimental**)
+- Added `k.cancel()` to cancel the current event (**experimental**)
+- ```js
+  onKeyPress("space", () => {
+      // do something
+      // cancel the event
+      return cancel();
+  });
+  ```
+- Added `getDefaultLayer()` to get the default layer (**experimental**)
+- Added `getLayers()` to get the layers list (**experimental**)
+- Added many JSDoc specifiers on many functions (@require, @deprecated, @since,
+  @group, etc)
+
+### Changed
+
+- Added `.use()`, `.unuse()` and `.has()` to `GameObjRaw`, to add, remove and
+  check components. This only works with `KAPLAYOpt.tagsAsComponents` set to
+  `true` (**experimental**)
+
+### Deprecated
+
+- Deprecated camera methods `camScale()`, `camPos()` and `camRot()` in favor of
+  `setCamScale()`, `getCamScale()`, `setCamPos()`, `getCamPos()`, `setCamRot()`
+  and `getCamRot`.
+- Deprecated `camTransform()` in favor of `getCamTransform()`.
+- Deprecated `camFlash()` in favor of `flash()`, for a `shake()`-like name.
+
+### Fixed
+
+- Fixed artifacts present in some TrueType fonts.
+- Fixed `.use()` and `.unuse()` with area components.
+
+## [3001.0.0] "Spooky Beans!" - 2024-10-31
+
+### Input
 
 - Added input bindings, `onButtonPress`, `onButtonRelease`, `onButtonDown`, and
   it's corresponding boolean versions, `isButtonPressed`, `isButtonDown` and
@@ -91,7 +287,7 @@
   });
   ```
 
-## Physics
+### Physics
 
 - added effector components: `areaEffector()`, `buoyancyEffector()`,
   `pointEffector()`, `surfaceEffector()`.
@@ -102,7 +298,7 @@
 - added `pathfinder()` component to calculate a list of waypoints on a graph.
 - now collision checks are only done if there's area objects.
 
-## Game Object
+### Game Object
 
 - added `getTreeRoot()` to get the game's root object, which is the parent of
   all other objects
@@ -123,7 +319,7 @@
   debug.log(obj.tags); // ["enemy", "dangerous"]
   ```
 
-## Components
+### Components
 
 - added support to setters/getters syntax in `ScaleComp` and `SpriteComp`
   components
@@ -136,7 +332,7 @@
   obj.sprite = "bag";
   ```
 
-## Rendering and Animation
+### Rendering and Animation
 
 - added the `animate()` component to _animate_ the properties of an object using
   keyframes. Check out
@@ -236,7 +432,7 @@
 - Added `SpriteComp.animFrame` to get the frame of the current animation (not on
   the spritesheet)
 
-## Audio
+### Audio
 
 - now you can pass an `AudioBuffer` to `loadSound()`
 - added `loadMusic()` to load streaming audio (doesn't block in loading screen).
@@ -248,7 +444,7 @@
   play("bgm");
   ```
 
-## Math
+### Math
 
 - added `Vec2.fromArray()` to convert an array to a `Vec2`.
 
@@ -277,7 +473,7 @@
   shuffle(numbers); // [3, 1, 5, 2, 4]
   ```
 
-## Debug mode
+### Debug mode
 
 - added `outline()`, `shader()`, and `area()` properties to `debug.inspect`.
 - added `KAPLAYOpt.debugKey` for customizing the key used to toggle debug mode.
@@ -308,7 +504,7 @@
 
 - Now `debug.log()` accepts multiple argument of any type, like `console.log()`.
 
-## Helpers
+### Helpers
 
 - added `getSceneName()` to get the current scene name
 - added `Color.toArray()` to convert a color to an array
@@ -323,7 +519,7 @@
 - added evaluation of the first and second derivatives for all splines
 - added higher order easing functions linear, steps and cubic-bezier
 
-## TypeScript
+### TypeScript
 
 - Now you can type `get()` with a type parameter and passing component types.
   (**v4000**)
@@ -339,7 +535,7 @@
 - Now `loadShader()` and `loadShaderURL()` accepts null for unused parameters.
 - Now `RectCompOpt` accepts a array of numbers for `radius`.
 
-## Deprecations
+### Deprecations
 
 > All changes applies for both v3001 and v4000
 
@@ -349,7 +545,7 @@
 - deprecated `Event`, `EventHandler` and `EventController` in favor of `KEvent`,
   `KEventHandler` and `KEventController`
 
-## Bug fixes
+### Bug fixes
 
 > All changes applies for both v3001 and v4000
 
@@ -481,7 +677,7 @@ getSprite("bean").then((spr) => {
 
 - fixed some indirect `fixed` related issues
 
-## v3000.1
+## [3000.1.0] - 2023-08-18 (kaboom.js)
 
 - added game object level input handling
 
@@ -565,9 +761,9 @@ ui.add([rect(100, 100)]);
   reset it?
 - fixed incorrect touch position when canvas is not at top left of page
 
-# v3000
+## [3000.0.0] - 2023-05-25 (kaboom.js)
 
-## Game Objects
+### Game Objects
 
 - added scene graph, game objects are now stored in a tree-like structure and
   can have children with `obj.add()`
@@ -621,7 +817,7 @@ console.log(enemies.length); // 4
 - added `onAdd()` and `onDestroy()` events to listen to added / destroyed game
   objects
 
-## Components
+### Components
 
 - added support for getter and setters in component properties
 
@@ -711,7 +907,7 @@ player.onBeforePhysicsResolve((collision) => {
   `stay(["gameover", "menu"])`
 - (**BREAK**) changed `SpriteComp#flipX` and `SpriteComp#flipY` to properties
   instead of functions
-- (**BEARK**) `sprite.onAnimStart()` and `sprite.onAnimEnd()` now triggers on
+- (**BREAK**) `sprite.onAnimStart()` and `sprite.onAnimEnd()` now triggers on
   any animation
 
 ```js
@@ -742,7 +938,7 @@ const player = add([
 ]);
 ```
 
-## Assets
+### Assets
 
 - added `loadProgress()` that returns a `0.0 - 1.0` that indicates current asset
   loading progress
@@ -775,7 +971,7 @@ loadSprite("player", [
 - (**BREAK**) added `loadShaderURL()`, `loadShader()` now only load shader code
   not files
 
-## Text
+### Text
 
 - added `loadFont()` to load `.ttf`, `.otf`, `.woff2` or any font supported by
   browser `FontFace`
@@ -804,7 +1000,7 @@ loadFont("apl386", "/examples/fonts/apl386.ttf", {
 "[green]oh hi[/green] here's some [wavy]styled[/wavy] text";
 ```
 
-## Graphics
+### Graphics
 
 - fixed visual artifacts on text rendering
 - added `colors` option to `drawPolygon()` that controls the color of each
@@ -856,7 +1052,7 @@ onMouseMove(() => {
 });
 ```
 
-## Audio
+### Audio
 
 - added option `kaboom({ backgroundAudio: false })` to not pause audio when tab
   not active
@@ -878,7 +1074,7 @@ music.volume = 0.5;
 music.loop = true;
 ```
 
-## Input
+### Input
 
 - added `onScroll(action: (delta: Vec2) => void)` to listen mouse wheel scroll
 - fixed touches not treated as mouse
@@ -894,7 +1090,7 @@ music.loop = true;
 - added `onGamepadConnect()` and `onGamepadDisconnect()`
 - added `gamepads` option to `kaboom()` to define custom gamepads
 
-## Level
+### Level
 
 - (**BREAK**) changed `addLevel()` options API
   - renamed `width` and `height` to `tileWidth` and `tileHeight`
@@ -935,7 +1131,7 @@ addLevel(["@  ^ $$", "======="], {
 });
 ```
 
-## Misc
+### Misc
 
 - sprites are now automatically packed, improving performance
 - (**BREAK**) renamed `gravity()` into `getGravity()` and `setGravity()`
@@ -1041,7 +1237,7 @@ timer.resume();
 - (**BREAK**) removed `debug.objCount()` in favor of `getAll().length`
 - added `debug.numFrames()` to get the current frame count
 
-### v2000.2.6
+## [2000.2.6] - 2022-01-27 (kaboom.js)
 
 - fixed text always being wrapped if updated
 - fixed text comp properties `letterSpacing`, `charSpacing`, `transform`,
@@ -1068,7 +1264,7 @@ timer.resume();
 
 - fixed updates not running at all when `kaboom({ debug: false })`
 
-## v2000.2 "Fancy Text Mode"
+## [2000.2.0] "Fancy Text Mode" 2022-01-23 (kaboom.js)
 
 - added `formatText()` and `drawFormattedText()`
 - added `charSpacing` and `lineSpacing` in `TextCompOpt` and `DrawTextOpt`
@@ -1092,7 +1288,7 @@ timer.resume();
 - allow non-stretch letterbox
 - fixed mouse position malfunction in fullscreen, stretch and letterbox mode
 
-### v2000.1.8
+### [2000.1.8]
 
 - fixed `Color#eq()` not giving correct result
 
@@ -1122,7 +1318,7 @@ timer.resume();
 
 - fixed `StateComp#enterState()` not accepting any state
 
-## v2000.1 "Record Mode"
+## [2000.1.0] "Record Mode" - 2021-11-04 (kaboom.js)
 
 - added `hsl2rgb()` for converting HSL color to kaboom RGB
 - added `record()` to start a screen recording
@@ -1183,7 +1379,7 @@ timer.resume();
   - `AudioPlay#isStopped()`
   - `AudioPlay#isPaused()`
 
-# v2000 "Burp Mode"
+## [2000.0.0] "Burp Mode" - 2021-10-20 (kaboom.js)
 
 - version jumped to v2000.0.0 (still semver, just big)
 - added `burp()` for easy burping
@@ -1415,7 +1611,7 @@ if (area.shape === "rect") {
 - added plugins npm package support e.g.
   `import asepritePlugin from "kaboom/plugins/aseprite"`
 
-# v0.5 "Sticky Type"
+## [0.5.0] "Sticky Type" - 2021-05-11 (kaboom.js)
 
 - platforms are now sticky
 - moved to TypeScript
@@ -1457,7 +1653,7 @@ if (area.shape === "rect") {
 - fixed `on("destroy")` handler getting called twice
 - fixed sprite `play()` not playing
 
-# v0.4 "Multiboom"
+## [0.4.0] "Multiboom" - UNKNOWN (kaboom.js)
 
 - **BREAK** removed `init()` and `kaboom.global()`, in favor of `kaboom()`, also
   allows multiple kaboom games on one page
@@ -1494,7 +1690,7 @@ k.vec2();
 - added `numFrames()` by `sprite()`
 - added `screenshot()` that returns of a png base64 data url for a screenshot
 
-# v0.3 "King Dedede...Bug!"
+## [0.3.0] "King Dedede...Bug!" - UNKNOWN
 
 - **BREAK** removed `pause()` and `paused()` in favor to `kaboom.debug.paused`
 - **BREAK** removed `velY`, `curPlatform` and `maxVel` fields by `body()`
@@ -1512,7 +1708,7 @@ k.vec2();
 - added on screen logging with `log()` and `error()`
 - fixed `loadRoot()` sometimes doesn't work in async tasks
 
-# v0.2 "Hear the Tremble"
+## [0.2.0] "Hear the Tremble" - UNKNOWN
 
 - **BREAK** removed `aseSpriteSheet` conf field from
   `loadSprite(name, src, conf)`
@@ -1537,7 +1733,7 @@ k.vec2();
 - added `readd()` to re-add an object to the scene without triggering events
 - added `level.spawn()`
 
-# v0.1 "Oh Hi Mark"
+## [0.1.0] "Oh Hi Mark" -
 
 - **BREAK** changed default origin point to `"topleft"`, so if you want object
   origin point to be at center you'll need to manual `origin("center")`

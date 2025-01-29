@@ -1,11 +1,16 @@
+// @ts-check
+
 import fs from "fs/promises";
 import path from "path";
 import puppeteer from "puppeteer";
-import { build, serve, wait } from "./lib.js";
+import { serve } from "./dev/serve.js";
+import { build } from "./lib/build.js";
+import { wait } from "./lib/util.js";
+
 const exampleCI = JSON.parse(
-    await fs.readFile(
-        new URL("../examples/ciTest.json", import.meta.url),
-    ),
+    (
+        await fs.readFile(new URL("../examples/ciTest.json", import.meta.url))
+    ).toString(),
 );
 
 await build();
@@ -14,7 +19,9 @@ const server = serve({ port: port });
 
 let failed = false;
 console.log("launching browser");
-const browser = await puppeteer.launch();
+const browser = await puppeteer.launch({
+    args: ["--no-sandbox"],
+});
 console.log("getting examples list");
 let examples;
 
@@ -30,6 +37,7 @@ else {
         // particle example crashes puppeteer in github action for some reason
         .filter((e) => e !== "particle");
 }
+
 for (const example of examples) {
     console.log(`testing example "${example}"`);
     const page = await browser.newPage();
@@ -42,7 +50,7 @@ for (const example of examples) {
         console.error(example, err);
     });
     await page.goto(`http://localhost:${port}/${example}`);
-    await page.addScriptTag({ path: "scripts/autoinput.js" });
+    await page.addScriptTag({ path: "scripts/lib/autoinput.js" });
     await wait(1000);
     await page.close();
 }

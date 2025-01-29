@@ -135,7 +135,7 @@ add([
 also works with CommonJS
 
 ```js
-const kaboom = require("kaplay");
+const kaplay = require("kaplay");
 ```
 
 Note that you'll need to use a bundler like `esbuild` or `webpack` to use KAPLAY
@@ -146,7 +146,7 @@ with NPM
 This exports a global `kaplay` function
 
 ```html
-<script src="https://unpkg.com/kaplay@3000.1.17/dist/kaboom.js"></script>
+<script src="https://unpkg.com/kaplay@3001.0.9/dist/kaplay.js"></script>
 <script>
 kaplay()
 </script>
@@ -156,7 +156,7 @@ or use with es modules
 
 ```html
 <script type="module">
-import kaplay from "https://unpkg.com/kaplay@3000.1.17/dist/kaboom.mjs"
+import kaplay from "https://unpkg.com/kaplay@3001.0.9/dist/kaplay.mjs"
 kaplay()
 </script>
 ```
@@ -184,12 +184,15 @@ Collections of games made with KAPLAY (and Kaboom), selected by KAPLAY:
 - [Newgrounds.com](https://www.newgrounds.com/playlist/379920/kaplay-games)
 
 ## Credits
+
 - Thanks to [tga](https://space55.xyz) for all his work on the original
   Kaboom.js
 - Thanks to [mulfok](https://twitter.com/MulfoK) for the awesome
   [mulfok32](https://lospec.com/palette-list/mulfok32) color palette, used in
   KAPLAY sprites and art
-- Thanks to [Pixabay](https://pixabay.com/users/pixabay-1/) for the great [burp](https://pixabay.com/sound-effects/burp-104984/) sound, used in `burp()` function
+- Thanks to [Pixabay](https://pixabay.com/users/pixabay-1/) for the great
+  [burp](https://pixabay.com/sound-effects/burp-104984/) sound, used in `burp()`
+  function
 - Thansk to [Kenney](https://kenney.nl/) for all used assets for examples
   - [Impact Sound Pack](https://kenney.nl/assets/impact-sounds)
   - [1-Bit Platformer Pack](https://kenney.nl/assets/1-bit-platformer-pack)

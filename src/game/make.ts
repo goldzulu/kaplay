@@ -28,6 +28,18 @@ import {
     type Tag,
 } from "../types";
 import { KEventController, KEventHandler, uid } from "../utils";
+import type { Game } from "./game";
+
+export enum KeepFlags {
+    Pos = 1,
+    Angle = 2,
+    Scale = 4,
+    All = 7,
+}
+
+export type SetParentOpt = {
+    keep: KeepFlags;
+};
 
 export function make<T>(comps: CompList<T> = []): GameObj<T> {
     const compStates = new Map<string, Comp>();
@@ -35,8 +47,11 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
     const cleanups = {} as Record<string, (() => unknown)[]>;
     const events = new KEventHandler();
     const inputEvents: KEventController[] = [];
+    const tags = new Set<Tag>("*");
+    const treatTagsAsComponents = _k.globalOpt.tagsAsComponents;
     let onCurCompCleanup: Function | null = null;
     let paused = false;
+    let _parent: GameObj;
 
     // the game object without the event methods, added later
     const obj: Omit<GameObj, keyof typeof evs> = {
@@ -45,7 +60,44 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
         hidden: false,
         transform: new Mat23(),
         children: [],
-        parent: null,
+
+        get parent() {
+            return _parent!;
+        },
+
+        set parent(p: GameObj) {
+            if (_parent === p) return;
+            const index = _parent
+                ? _parent.children.indexOf(this as GameObj)
+                : -1;
+            if (index !== -1) {
+                _parent.children.splice(index, 1);
+            }
+            _parent = p;
+            if (p) {
+                p.children.push(this as GameObj);
+            }
+        },
+
+        setParent(p: GameObj, opt: SetParentOpt) {
+            if (_parent === p) return;
+            const oldTransform = _parent.transform;
+            const newTransform = p.transform;
+            if ((opt.keep & KeepFlags.Pos) && this.pos !== undefined) {
+                oldTransform.transformPoint(this.pos, this.pos);
+                newTransform.inverse.transformPoint(this.pos, this.pos);
+            }
+            if ((opt.keep & KeepFlags.Angle) && this.angle !== undefined) {
+                this.angle += newTransform.getRotation()
+                    - oldTransform.getRotation();
+            }
+            if ((opt.keep & KeepFlags.Scale) && this.scale !== undefined) {
+                this.scale = this.scale.scale(
+                    oldTransform.getScale().invScale(newTransform.getScale()),
+                );
+            }
+            this.parent = p;
+        },
 
         set paused(p) {
             if (p === paused) return;
@@ -60,13 +112,7 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
         },
 
         get tags() {
-            const tags = [];
-            for (const [key, value] of compStates.entries()) {
-                if (Object.keys(value).length == 1) {
-                    tags.push(key);
-                }
-            }
-            return tags;
+            return Array.from(tags);
         },
 
         add<T2>(this: GameObj, a: CompList<T2> | GameObj<T2>): GameObj<T2> {
@@ -78,7 +124,6 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             }
             obj.parent = this;
             calcTransform(obj, obj.transform);
-            this.children.push(obj);
             // TODO: trigger add for children
             obj.trigger("add", obj);
             _k.game.events.trigger("add", obj);
@@ -95,22 +140,16 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
         },
 
         remove(obj: GameObj): void {
-            const idx = this.children.indexOf(obj);
+            obj.parent = null;
 
-            if (idx !== -1) {
-                obj.parent = null;
-                this.children.splice(idx, 1);
+            const trigger = (o: GameObj) => {
+                o.trigger("destroy");
+                _k.game.events.trigger("destroy", o);
+                o.children.forEach((child) => trigger(child));
+            };
 
-                const trigger = (o: GameObj) => {
-                    o.trigger("destroy");
-                    _k.game.events.trigger("destroy", o);
-                    o.children.forEach((child) => trigger(child));
-                };
-
-                trigger(obj);
-            }
+            trigger(obj);
         },
-
         // TODO: recursive
         removeAll(this: GameObj, tag?: Tag) {
             if (tag) {
@@ -202,15 +241,16 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             popTransform();
         },
 
-        // use a comp or a tag
-        use(comp: Comp | Tag) {
-            if (!comp) return;
-
-            // tag
-            if (typeof comp === "string") {
-                return this.use({
-                    id: comp,
-                });
+        // use a comp
+        use(this: GameObj, comp: Comp) {
+            if (typeof comp == "string") {
+                // for use add(["tag"])
+                return tags.add(comp);
+            }
+            else if (!comp || typeof comp != "object") {
+                throw new Error(
+                    `You can only pass a component or a string to .use(), you passed a "${typeof comp}"`,
+                );
             }
 
             let gc = [];
@@ -221,6 +261,8 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                 cleanups[comp.id] = [];
                 gc = cleanups[comp.id];
                 compStates.set(comp.id, comp);
+                // supporting tagsAsComponents
+                if (treatTagsAsComponents) tags.add(comp.id);
             }
             else {
                 anonymousCompStates.push(comp);
@@ -311,6 +353,10 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                     comp.add.call(this);
                     onCurCompCleanup = null;
                 }
+                if (comp.id) {
+                    this.trigger("use", comp.id);
+                    _k.game.events.trigger("use", this, comp.id);
+                }
             }
             else {
                 if (comp.require) {
@@ -319,7 +365,8 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             }
         },
 
-        unuse(id: Tag) {
+        // Remove components
+        unuse(this: GameObj, id: string) {
             if (compStates.has(id)) {
                 // check all components for a dependent, if there's one, throw an error
                 for (const comp of compStates.values()) {
@@ -331,6 +378,12 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                 }
 
                 compStates.delete(id);
+
+                this.trigger("unuse", id);
+                _k.game.events.trigger("unuse", this, id);
+            }
+            else if (treatTagsAsComponents && tags.has(id)) {
+                tags.delete(id);
             }
 
             if (cleanups[id]) {
@@ -344,8 +397,19 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             return compStates.get(id) ?? null;
         },
 
-        // TODO: Separate
         get<T = any>(t: Tag | Tag[], opts: GetOpt = {}): GameObj<T>[] {
+            const checkTagsOrComps = (child: GameObj, t: Tag | Tag[]) => {
+                if (opts.only === "comps") {
+                    return child.has(t);
+                }
+                else if (opts.only === "tags") {
+                    return child.is(t);
+                }
+                else {
+                    return child.is(t) || child.has(t);
+                }
+            };
+
             let list: GameObj[] = opts.recursive
                 ? this.children.flatMap(
                     function recurse(child: GameObj): GameObj[] {
@@ -354,7 +418,9 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                 )
                 : this.children;
 
-            list = list.filter((child) => t ? child.is(t) : true);
+            list = list.filter((child) =>
+                t ? checkTagsOrComps(child, t) : true
+            );
 
             if (opts.liveUpdate) {
                 const isChild = (obj: GameObj) => {
@@ -365,15 +431,30 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
 
                 const events: KEventController[] = [];
 
-                // TODO: handle when object add / remove tags
                 // TODO: clean up when obj destroyed
                 events.push(_k.k.onAdd((obj) => {
-                    if (isChild(obj) && obj.is(t)) {
+                    if (isChild(obj) && checkTagsOrComps(obj, t)) {
                         list.push(obj);
                     }
                 }));
                 events.push(_k.k.onDestroy((obj) => {
-                    if (isChild(obj) && obj.is(t)) {
+                    if (checkTagsOrComps(obj, t)) {
+                        const idx = list.findIndex((o) => o.id === obj.id);
+                        if (idx !== -1) {
+                            list.splice(idx, 1);
+                        }
+                    }
+                }));
+                events.push(_k.k.onUse((obj) => {
+                    if (isChild(obj) && checkTagsOrComps(obj, t)) {
+                        const idx = list.findIndex((o) => o.id === obj.id);
+                        if (idx == -1) {
+                            list.push(obj);
+                        }
+                    }
+                }));
+                events.push(_k.k.onUnuse((obj, id) => {
+                    if (isChild(obj) && !checkTagsOrComps(obj, t)) {
                         const idx = list.findIndex((o) => o.id === obj.id);
                         if (idx !== -1) {
                             list.splice(idx, 1);
@@ -424,6 +505,7 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                     );
                     break;
             }
+
             if (include) {
                 const includeOp = opt.includeOp || "and";
 
@@ -438,6 +520,7 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                     );
                 }
             }
+
             if (exclude) {
                 const excludeOp = opt.includeOp || "and";
                 if (excludeOp === "and" || !Array.isArray(opt.include)) {
@@ -451,9 +534,11 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                     );
                 }
             }
+
             if (opt.visible === true) {
                 list = list.filter(o => o.visible);
             }
+
             if (opt.distance) {
                 if (!this.pos) {
                     throw Error(
@@ -490,20 +575,66 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             return _k.game.root.isAncestorOf(this);
         },
 
-        is(tag: Tag | Tag[]): boolean {
-            if (tag === "*") {
-                return true;
-            }
+        // Tags related
+        // Check if gameobj has a tag
+        is(tag: Tag | Tag[], op: "or" | "and" = "and"): boolean {
             if (Array.isArray(tag)) {
-                for (const t of tag) {
-                    if (!this.c(t)) {
-                        return false;
-                    }
+                if (op === "and") {
+                    return tag.every(tag => tags.has(tag));
                 }
-                return true;
+                else {
+                    return tag.some(tag => tags.has(tag));
+                }
             }
             else {
-                return this.c(tag) != null;
+                return tags.has(tag);
+            }
+        },
+
+        // Tag a game object
+        tag(this: GameObj, tag: Tag | Tag[]): void {
+            if (Array.isArray(tag)) {
+                for (const t of tag) {
+                    tags.add(t);
+                    this.trigger("tag", t);
+                    _k.game.events.trigger("tag", this, t);
+                }
+            }
+            else {
+                tags.add(tag);
+                this.trigger("tag", tag);
+                _k.game.events.trigger("tag", this, tag);
+            }
+        },
+
+        // Untag a game object
+        untag(this: GameObj, tag: Tag | Tag[]): void {
+            if (Array.isArray(tag)) {
+                for (const t of tag) {
+                    tags.delete(t);
+                    this.trigger("untag", t);
+                    _k.game.events.trigger("untag", this, t);
+                }
+            }
+            else {
+                tags.delete(tag);
+                this.trigger("untag", tag);
+                _k.game.events.trigger("untag", this, tag);
+            }
+        },
+
+        // Check if gameobj has a component. It also checks many components with
+        has(compList: string | string[], op: "and" | "or" = "and"): boolean {
+            if (Array.isArray(compList)) {
+                if (op === "and") {
+                    return compList.every((c) => compStates.has(c));
+                }
+                else {
+                    return compList.some(c => compStates.has(c));
+                }
+            }
+            else {
+                return compStates.has(compList);
             }
         },
 
@@ -573,6 +704,14 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
 
         onDestroy(action: () => void): KEventController {
             return this.on("destroy", action);
+        },
+
+        onUse(action: (id: string) => void): KEventController {
+            return this.on("use", action);
+        },
+
+        onUnuse(action: (id: string) => void): KEventController {
+            return this.on("unuse", action);
         },
 
         clearEvents() {

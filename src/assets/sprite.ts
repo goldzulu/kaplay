@@ -14,11 +14,11 @@ export type SpriteAnim = number | {
     /**
      * The starting frame.
      */
-    from: number;
+    from?: number;
     /**
      * The end frame.
      */
-    to: number;
+    to?: number;
     /**
      * If this anim should be played in loop.
      */
@@ -31,6 +31,12 @@ export type SpriteAnim = number | {
      * This anim's speed in frames per second.
      */
     speed?: number;
+    /**
+     * List of frames for the animation.
+     *
+     * If this property exists, **from, to, and pingpong will be ignored**.
+     */
+    frames?: number[];
 };
 
 /**
@@ -44,7 +50,7 @@ export type SpriteAnims = Record<string, SpriteAnim>;
  */
 export interface LoadSpriteOpt {
     /**
-     * If the defined area contains multiple sprites, how many frames are in the area hozizontally.
+     * If the defined area contains multiple sprites, how many frames are in the area horizontally.
      */
     sliceX?: number;
     /**
@@ -67,6 +73,10 @@ export interface LoadSpriteOpt {
      * Animation configuration.
      */
     anims?: SpriteAnims;
+    /**
+     * If the sprite is a single image.
+     */
+    singular?: boolean;
 }
 
 export type NineSlice = {
@@ -135,7 +145,9 @@ export class SpriteData {
         data: ImageSource,
         opt: LoadSpriteOpt = {},
     ): SpriteData {
-        const [tex, quad, packerId] = _k.assets.packer.add(data);
+        const [tex, quad, packerId] = opt.singular
+            ? _k.assets.packer.add_single(data)
+            : _k.assets.packer.add(data);
         const frames = opt.frames
             ? opt.frames.map((f) =>
                 new Quad(

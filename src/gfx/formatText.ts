@@ -11,23 +11,30 @@ import { Quad, Vec2, vec2 } from "../math/math";
 import { type Outline, type TexFilter } from "../types";
 import { runes } from "../utils";
 import { alignPt } from "./anchor";
-import type {
-    CharTransform,
-    DrawTextOpt,
-    FormattedChar,
-    FormattedText,
+import {
+    type CharTransform,
+    type DrawTextOpt,
+    drawUVQuad,
+    type FormattedChar,
+    type FormattedText,
 } from "./draw";
 import { Texture } from "./gfx";
+import { center } from "./stack";
 
 type FontAtlas = {
     font: BitmapFontData;
     cursor: Vec2;
+    maxHeight: number;
     outline: Outline | null;
 };
 
 const fontAtlases: Record<string, FontAtlas> = {};
 
 function applyCharTransform(fchar: FormattedChar, tr: CharTransform) {
+    if (tr.override) {
+        Object.assign(fchar, tr);
+        return;
+    }
     if (tr.pos) fchar.pos = fchar.pos.add(tr.pos);
     if (tr.scale) fchar.scale = fchar.scale.scale(vec2(tr.scale));
     if (tr.angle) fchar.angle += tr.angle;
@@ -81,9 +88,11 @@ export function compileStyledText(txt: string): {
                                 + `Expected [/${x}], got [/${gn}]`,
                         );
                     }
-                    else {throw new Error(
+                    else {
+                        throw new Error(
                             `Styled text error: stray end tag [/${gn}]`,
-                        );}
+                        );
+                    }
                 }
             }
             else styleStack.push(gn);
@@ -148,13 +157,19 @@ export function formatText(opt: DrawTextOpt): FormattedText {
         // TODO: customizable font tex filter
         const atlas: FontAtlas = fontAtlases[fontName] ?? {
             font: {
-                tex: new Texture(_k.gfx.ggl, FONT_ATLAS_WIDTH, FONT_ATLAS_HEIGHT, {
-                    filter: opts.filter,
-                }),
+                tex: new Texture(
+                    _k.gfx.ggl,
+                    FONT_ATLAS_WIDTH,
+                    FONT_ATLAS_HEIGHT,
+                    {
+                        filter: opts.filter,
+                    },
+                ),
                 map: {},
                 size: DEF_TEXT_CACHE_SIZE,
             },
             cursor: new Vec2(0),
+            maxHeight: 0,
             outline: opts.outline,
         };
 
@@ -180,6 +195,7 @@ export function formatText(opt: DrawTextOpt): FormattedText {
                     _k.fontCacheCanvas.width,
                     _k.fontCacheCanvas.height,
                 );
+
                 c2d.font = `${font.size}px ${fontName}`;
                 c2d.textBaseline = "top";
                 c2d.textAlign = "left";
@@ -187,7 +203,8 @@ export function formatText(opt: DrawTextOpt): FormattedText {
                 const m = c2d.measureText(ch);
                 let w = Math.ceil(m.width);
                 if (!w) continue;
-                let h = m.fontBoundingBoxAscent + m.fontBoundingBoxDescent;
+                let h = Math.ceil(Math.abs(m.actualBoundingBoxAscent))
+                    + Math.ceil(Math.abs(m.actualBoundingBoxDescent));
 
                 // TODO: Test if this works with the verification of width and color
                 if (
@@ -213,12 +230,18 @@ export function formatText(opt: DrawTextOpt): FormattedText {
                     atlas.outline?.width ?? 0,
                 );
 
-                const img = c2d.getImageData(0, 0, w, h);
+                const img = c2d.getImageData(
+                    0,
+                    0,
+                    w,
+                    h,
+                );
 
                 // if we are about to exceed the X axis of the texture, go to another line
                 if (atlas.cursor.x + w > FONT_ATLAS_WIDTH) {
                     atlas.cursor.x = 0;
-                    atlas.cursor.y += h;
+                    atlas.cursor.y += atlas.maxHeight;
+                    atlas.maxHeight = 0;
                     if (atlas.cursor.y > FONT_ATLAS_HEIGHT) {
                         // TODO: create another atlas
                         throw new Error(
@@ -228,13 +251,16 @@ export function formatText(opt: DrawTextOpt): FormattedText {
                 }
 
                 font.tex.update(img, atlas.cursor.x, atlas.cursor.y);
+
                 font.map[ch] = new Quad(
                     atlas.cursor.x,
                     atlas.cursor.y,
                     w,
                     h,
                 );
-                atlas.cursor.x += w;
+
+                atlas.cursor.x += w + 1;
+                atlas.maxHeight = Math.max(atlas.maxHeight, h);
             }
         }
     }
@@ -254,6 +280,7 @@ export function formatText(opt: DrawTextOpt): FormattedText {
     let cursor = 0;
     let lastSpace: number | null = null;
     let lastSpaceWidth: number = 0;
+    let paraIndentX: number | undefined = undefined;
 
     // TODO: word break
     while (cursor < chars.length) {
@@ -272,6 +299,7 @@ export function formatText(opt: DrawTextOpt): FormattedText {
             lastSpaceWidth = 0;
             curX = 0;
             curLine = [];
+            paraIndentX = undefined;
         }
         else {
             let q = font.map[ch];
@@ -300,7 +328,7 @@ export function formatText(opt: DrawTextOpt): FormattedText {
                         chars: curLine,
                     });
 
-                    curX = 0;
+                    curX = paraIndentX ?? 0;
                     curLine = [];
                 }
 
@@ -327,6 +355,11 @@ export function formatText(opt: DrawTextOpt): FormattedText {
                 if (ch === " ") {
                     lastSpace = curLine.length;
                     lastSpaceWidth = curX;
+                }
+                if (
+                    opt.indentAll && paraIndentX === undefined && /\S/.test(ch)
+                ) {
+                    paraIndentX = curX;
                 }
 
                 curX += gw;

@@ -28,7 +28,8 @@ export interface BodyComp extends Comp {
      */
     damping: number;
     /**
-     * If object is static, won't move, and all non static objects won't move past it.
+     * If object is static, it won't move, all non static objects won't move past it, and all
+     * calls to addForce(), applyImpulse(), or jump() on this body will do absolutely nothing.
      */
     isStatic: boolean;
     /**
@@ -160,7 +161,8 @@ export interface BodyCompOpt {
      */
     gravityScale?: number;
     /**
-     * If object is static, won't move, and all non static objects won't move past it.
+     * If object is static, it won't move, all non static objects won't move past it, and all
+     * calls to addForce(), applyImpulse(), or jump() on this body will do absolutely nothing.
      *
      * @since v3000.0
      */
@@ -206,14 +208,14 @@ export function body(opt: BodyCompOpt = {}): BodyComp {
                 throw new Error("Can't set body mass to 0");
             }
 
-            if (this.is("area")) {
+            if (this.has("area")) {
                 // static vs static: don't resolve
                 // static vs non-static: always resolve non-static
                 // non-static vs non-static: resolve the first one
                 this.onCollideUpdate(
                     (other, col) => {
                         if (!col) return;
-                        if (!other.is("body")) return;
+                        if (!other.has("body")) return;
                         if (col.resolved) return;
 
                         this.trigger("beforePhysicsResolve", col);
@@ -322,7 +324,7 @@ export function body(opt: BodyCompOpt = {}): BodyComp {
                     // We are still colliding with the platform and the platform exists
                     this.isColliding(curPlatform)
                     && curPlatform.exists()
-                    && curPlatform.is("body")
+                    && curPlatform.has("body")
                 ) {
                     // This needs to happen in onUpdate. Otherwise the player position will jitter.
                     if (
@@ -392,7 +394,7 @@ export function body(opt: BodyCompOpt = {}): BodyComp {
                         // If we are no longer on the platform, or the platform was deleted
                         !this.isColliding(curPlatform)
                         || !curPlatform.exists()
-                        || !curPlatform.is("body")
+                        || !curPlatform.has("body")
                     ) {
                         willFall = true;
                     }
@@ -472,15 +474,18 @@ export function body(opt: BodyCompOpt = {}): BodyComp {
         },
 
         applyImpulse(impulse: Vec2) {
+            if (this.isStatic) return;
             this.vel = this.vel.add(impulse);
         },
 
         addForce(force: Vec2) {
+            if (this.isStatic) return;
             acc.x += force.x / this.mass;
             acc.y += force.y / this.mass;
         },
 
         jump(force: number) {
+            if (this.isStatic) return;
             curPlatform = null;
             lastPlatformPos = null;
             this.vel = getGravityDirection().scale(
