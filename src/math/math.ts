@@ -890,6 +890,7 @@ export class Mat23 {
         this.d = m.d;
         this.e = m.e;
         this.f = m.f;
+        return this;
     }
     setIdentity() {
         this.a = 1;
@@ -898,6 +899,7 @@ export class Mat23 {
         this.d = 1;
         this.e = 0;
         this.f = 0;
+        return this;
     }
     mul(other: Mat23): Mat23 {
         return new Mat23(
@@ -2966,7 +2968,12 @@ export class Polygon {
          */
         return vec2();
     }
-    cut(a: Vec2, b: Vec2): [Polygon | null, Polygon | null] {
+    cut(
+        a: Vec2,
+        b: Vec2,
+        srcUv?: Vec2[],
+        dstUv?: [Vec2[], Vec2[]],
+    ): [Polygon | null, Polygon | null] {
         const surfaceLine = new Line(a, b);
         const left: Array<Vec2> = [];
         const right: Array<Vec2> = [];
@@ -2974,17 +2981,31 @@ export class Polygon {
         let prev = this.pts[this.pts.length - 1];
         let ap = prev.sub(a);
         let wasLeft = ab.cross(ap) > 0;
-        this.pts.forEach(p => {
+        this.pts.forEach((p, index) => {
             ap = p.sub(a);
             const isLeft = ab.cross(ap) > 0;
             if (wasLeft != isLeft) {
                 // Since the points are on opposite sides of the line, we know they intersect
-                const intersection = segmentLineIntersection(prev, p, a, b);
-                left.push(intersection!);
-                right.push(intersection!);
+                const intersection = segmentLineIntersection(prev, p, a, b)!;
+                left.push(intersection);
+                right.push(intersection);
+                if (srcUv && dstUv) {
+                    const uv1 =
+                        srcUv[index === 0 ? srcUv.length - 1 : index - 1];
+                    const uv2 = srcUv[index];
+                    const ab = p.sub(prev);
+                    const ac = intersection.sub(prev);
+                    const alpha = ac.dot(ab) / ab.dot(ab);
+                    const uv = lerp(uv1, uv2, alpha);
+                    dstUv[0].push(uv);
+                    dstUv[1].push(uv);
+                }
                 wasLeft = isLeft;
             }
             (isLeft ? left : right).push(p);
+            if (srcUv && dstUv) {
+                (isLeft ? dstUv[0] : dstUv[1]).push(srcUv[index]);
+            }
             prev = p;
         });
         return [

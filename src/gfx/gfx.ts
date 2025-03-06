@@ -1,5 +1,12 @@
 import type { Shader, Uniform } from "../assets";
-import type { ImageSource, TexFilter, TextureOpt } from "../types";
+import { getCamTransform } from "../game";
+import { Mat23, Mat4 } from "../math";
+import {
+    BlendMode,
+    type ImageSource,
+    type TexFilter,
+    type TextureOpt,
+} from "../types";
 import { deepEq } from "../utils/";
 
 export type GfxCtx = ReturnType<typeof initGfx>;
@@ -106,6 +113,8 @@ export type VertexFormat = {
     size: number;
 }[];
 
+const fixedCameraMatrix = new Mat4();
+
 export class BatchRenderer {
     ctx: GfxCtx;
 
@@ -124,6 +133,8 @@ export class BatchRenderer {
     curTex: Texture | null = null;
     curShader: Shader | null = null;
     curUniform: Uniform | null = null;
+    curBlend: BlendMode = BlendMode.Normal;
+    curFixed: boolean | undefined = undefined;
 
     constructor(
         ctx: GfxCtx,
@@ -164,8 +175,10 @@ export class BatchRenderer {
         shader: Shader,
         tex: Texture | null = null,
         uniform: Uniform | null = null,
+        blend: BlendMode,
         width: number,
-        height: number
+        height: number,
+        fixed: boolean,
     ) {
         if (
             primitive !== this.curPrimitive
@@ -173,11 +186,59 @@ export class BatchRenderer {
             || shader !== this.curShader
             || ((this.curUniform != uniform)
                 && !deepEq(this.curUniform, uniform))
+            || blend !== this.curBlend
+            || fixed !== this.curFixed
             || this.vqueue.length + verts.length * this.stride
-            > this.maxVertices
+                > this.maxVertices
             || this.iqueue.length + indices.length > this.maxIndices
         ) {
             this.flush(width, height);
+
+            if (blend !== this.curBlend) {
+                const gl = this.ctx.gl;
+                this.curBlend = blend;
+                switch (this.curBlend) {
+                    case BlendMode.Normal:
+                        gl.blendFuncSeparate(
+                            gl.ONE,
+                            gl.ONE_MINUS_SRC_ALPHA,
+                            gl.ONE,
+                            gl.ONE_MINUS_SRC_ALPHA,
+                        );
+                        break;
+                    case BlendMode.Add:
+                        gl.blendFuncSeparate(
+                            gl.ONE,
+                            gl.ONE,
+                            gl.ONE,
+                            gl.ONE_MINUS_SRC_ALPHA,
+                        );
+                        break;
+                    case BlendMode.Multiply:
+                        gl.blendFuncSeparate(
+                            gl.DST_COLOR,
+                            gl.ZERO,
+                            gl.ONE,
+                            gl.ONE_MINUS_SRC_ALPHA,
+                        );
+                        break;
+                    case BlendMode.Screen:
+                        gl.blendFuncSeparate(
+                            gl.ONE_MINUS_DST_COLOR,
+                            gl.ONE,
+                            gl.ONE,
+                            gl.ONE_MINUS_SRC_ALPHA,
+                        );
+                        break;
+                    case BlendMode.Overlay:
+                        gl.blendFuncSeparate(
+                            gl.DST_COLOR,
+                            gl.ONE_MINUS_SRC_ALPHA,
+                            gl.ONE,
+                            gl.ONE_MINUS_SRC_ALPHA,
+                        );
+                }
+            }
         }
         const indexOffset = this.vqueue.length / this.stride;
         let l = verts.length;
@@ -192,6 +253,7 @@ export class BatchRenderer {
         this.curShader = shader;
         this.curTex = tex;
         this.curUniform = uniform;
+        this.curFixed = fixed;
     }
 
     flush(width: number, height: number) {
@@ -206,38 +268,60 @@ export class BatchRenderer {
 
         const gl = this.ctx.gl;
 
+        // Bind vertex data
         this.ctx.pushArrayBuffer(this.glVBuf);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(this.vqueue));
+
+        // Bind index data
         this.ctx.pushElementArrayBuffer(this.glIBuf);
         gl.bufferSubData(
             gl.ELEMENT_ARRAY_BUFFER,
             0,
             new Uint16Array(this.iqueue),
         );
+
+        // Set vertex format
         this.ctx.setVertexFormat(this.vertexFormat);
+
+        // Bind Shader
         this.curShader.bind();
+
+        // Send user uniforms
         if (this.curUniform) {
             this.curShader.send(this.curUniform);
         }
+
+        // Send system uniforms
         this.curShader.send({
             width,
-            height
+            height,
+            camera: this.curFixed ? fixedCameraMatrix : getCamTransform(),
         });
+
+        // Bind texture
         this.curTex?.bind();
+
+        // Draw vertex buffer using active indices
         gl.drawElements(
             this.curPrimitive,
             this.iqueue.length,
             gl.UNSIGNED_SHORT,
             0,
         );
+
+        // Unbind texture and shader
         this.curTex?.unbind();
         this.curShader.unbind();
 
+        // Unbind buffers
         this.ctx.popArrayBuffer();
         this.ctx.popElementArrayBuffer();
 
-        this.vqueue = [];
-        this.iqueue = [];
+        // Reset local buffers
+        this.vqueue.length = 0;
+        this.iqueue.length = 0;
+
+        // Increase draw
         this.numDraws++;
     }
 

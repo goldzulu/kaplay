@@ -1,11 +1,11 @@
 // TODO: accept canvas
 
-import { dt } from "../../app";
 import type { Asset, SpriteAnim, SpriteData } from "../../assets";
 import { resolveSprite } from "../../assets/sprite";
 import { onLoad } from "../../game";
 import { getRenderProps } from "../../game/utils";
 import { drawTexture, type Texture } from "../../gfx";
+import { _k } from "../../kaplay";
 import { Quad, quad, Rect, Vec2, vec2 } from "../../math";
 import type {
     Comp,
@@ -237,7 +237,9 @@ export function sprite(
         }
         const frames = [];
         if (anim.from === undefined || anim.to === undefined) {
-            throw new Error("Sprite anim 'from' and 'to' must be defined if 'frames' is not defined");
+            throw new Error(
+                "Sprite anim 'from' and 'to' must be defined if 'frames' is not defined",
+            );
         }
         const frameSeqLength = Math.abs(anim.to - anim.from) + 1;
         for (let i = 0; i < frameSeqLength; i++) {
@@ -249,7 +251,7 @@ export function sprite(
             }
         }
         return frames;
-    }
+    };
 
     return {
         id: "sprite",
@@ -400,7 +402,7 @@ export function sprite(
                 throw new Error("Sprite anim speed cannot be 0");
             }
 
-            curAnim.timer += dt() * this.animSpeed;
+            curAnim.timer += _k.k.dt() * this.animSpeed;
 
             if (curAnim.timer >= (1 / curAnim.speed)) {
                 curAnim.timer = 0;
@@ -411,21 +413,26 @@ export function sprite(
                     if (curAnim.pingpong && !anim.pingpong) {
                         curAnimDir = -1;
                         curAnim.frameIndex = frames.length - 2;
-                    } else if (curAnim.loop) {
+                    }
+                    else if (curAnim.loop) {
                         curAnim.frameIndex = 0;
-                    } else {
+                    }
+                    else {
                         this.frame = frames.at(-1)!;
                         curAnim.onEnd();
                         this.stop();
                         return;
                     }
-                } else if (curAnim.frameIndex < 0) {
+                }
+                else if (curAnim.frameIndex < 0) {
                     if (curAnim.pingpong && curAnim.loop) {
                         curAnimDir = 1;
                         curAnim.frameIndex = 1;
-                    } else if (curAnim.loop) {
+                    }
+                    else if (curAnim.loop) {
                         curAnim.frameIndex = frames.length - 1;
-                    } else {
+                    }
+                    else {
                         this.frame = frames[0];
                         curAnim.onEnd();
                         this.stop();
@@ -465,7 +472,7 @@ export function sprite(
                     pingpong: false,
                     speed: 0,
                     frameIndex: 0,
-                    onEnd: () => { },
+                    onEnd: () => {},
                 }
                 : {
                     name: name,
@@ -474,7 +481,7 @@ export function sprite(
                     pingpong: opt.pingpong ?? anim.pingpong ?? false,
                     speed: opt.speed ?? anim.speed ?? 10,
                     frameIndex: 0,
-                    onEnd: opt.onEnd ?? (() => { }),
+                    onEnd: opt.onEnd ?? (() => {}),
                 };
 
             curAnimDir = typeof anim === "number" ? null : 1;

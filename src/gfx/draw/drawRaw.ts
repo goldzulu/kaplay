@@ -1,8 +1,7 @@
 import { Asset, resolveShader, type Uniform } from "../../assets";
 import { _k } from "../../kaplay";
-import { Vec2, vec2 } from "../../math/math";
-import { screen2ndc } from "../../math/various";
-import type { Attributes, RenderProps } from "../../types";
+import { Vec2 } from "../../math/math";
+import { type Attributes, BlendMode, type RenderProps } from "../../types";
 import type { Texture } from "../gfx";
 import { height, width } from "../stack";
 
@@ -15,6 +14,7 @@ export function drawRaw(
     tex?: Texture,
     shaderSrc?: RenderProps["shader"],
     uniform?: Uniform,
+    blend?: BlendMode,
 ) {
     const parsedTex = tex ?? _k.gfx.defTex;
     const parsedShader = shaderSrc ?? _k.gfx.defShader;
@@ -24,9 +24,7 @@ export function drawRaw(
         return;
     }
 
-    const transform = (_k.gfx.fixed || fixed)
-        ? _k.gfx.transform
-        : _k.game.cam.transform.mul(_k.gfx.transform);
+    const transform = _k.gfx.transform;
 
     const vertLength = attributes.pos.length / 2;
     const vv: number[] = new Array(vertLength * 8);
@@ -35,7 +33,7 @@ export function drawRaw(
     for (let i = 0; i < vertLength; i++) {
         scratchPt.x = attributes.pos[i * 2];
         scratchPt.y = attributes.pos[i * 2 + 1];
-        transform.transformPoint(scratchPt, scratchPt)
+        transform.transformPoint(scratchPt, scratchPt);
 
         vv[index++] = scratchPt.x;
         vv[index++] = scratchPt.y;
@@ -54,7 +52,9 @@ export function drawRaw(
         shader,
         parsedTex,
         uniform,
+        blend ?? BlendMode.Normal,
         width(),
-        height()
+        height(),
+        _k.gfx.fixed || fixed,
     );
 }

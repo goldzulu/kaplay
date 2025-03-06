@@ -16,8 +16,8 @@ import {
     pushTranslateV,
 } from "../gfx";
 import { _k } from "../kaplay";
+import { calcTransform } from "../math";
 import { Mat23 } from "../math/math";
-import { calcTransform } from "../math/various";
 import {
     type Comp,
     type CompList,
@@ -27,8 +27,7 @@ import {
     type QueryOpt,
     type Tag,
 } from "../types";
-import { KEventController, KEventHandler, uid } from "../utils";
-import type { Game } from "./game";
+import { KEvent, KEventController, KEventHandler, uid } from "../utils";
 
 export enum KeepFlags {
     Pos = 1,
@@ -46,6 +45,9 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
     const anonymousCompStates: Comp[] = [];
     const cleanups = {} as Record<string, (() => unknown)[]>;
     const events = new KEventHandler();
+    const fixedUpdateEvents = new KEvent<[]>();
+    const updateEvents = new KEvent<[]>();
+    const drawEvents = new KEvent<[]>();
     const inputEvents: KEventController[] = [];
     const tags = new Set<Tag>("*");
     const treatTagsAsComponents = _k.globalOpt.tagsAsComponents;
@@ -165,7 +167,7 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             this.children
                 /*.sort((o1, o2) => (o1.z ?? 0) - (o2.z ?? 0))*/
                 .forEach((child) => child.fixedUpdate());
-            this.trigger("fixedUpdate");
+            fixedUpdateEvents.trigger();
         },
 
         update(this: GameObj) {
@@ -173,7 +175,7 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             this.children
                 /*.sort((o1, o2) => (o1.z ?? 0) - (o2.z ?? 0))*/
                 .forEach((child) => child.update());
-            this.trigger("update");
+            updateEvents.trigger();
         },
 
         draw(
@@ -211,11 +213,11 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                         children[i].draw();
                     }
                 }, () => {
-                    this.trigger("draw");
+                    drawEvents.trigger();
                 });
             }
             else {
-                this.trigger("draw");
+                drawEvents.trigger();
                 for (let i = 0; i < children.length; i++) {
                     children[i].draw();
                 }
@@ -245,6 +247,8 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
         use(this: GameObj, comp: Comp) {
             if (typeof comp == "string") {
                 // for use add(["tag"])
+                this.trigger("tag", comp);
+                _k.game.events.trigger("tag", this, comp);
                 return tags.add(comp);
             }
             else if (!comp || typeof comp != "object") {
@@ -445,22 +449,46 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
                         }
                     }
                 }));
-                events.push(_k.k.onUse((obj) => {
-                    if (isChild(obj) && checkTagsOrComps(obj, t)) {
-                        const idx = list.findIndex((o) => o.id === obj.id);
-                        if (idx == -1) {
-                            list.push(obj);
+                // If tags are components, we need to use these callbacks, whether watching tags or components
+                // If tags are not components, we only need to use these callbacks if this query looks at components
+                if (treatTagsAsComponents || opts.only !== "tags") {
+                    events.push(_k.k.onUse((obj, id) => {
+                        if (isChild(obj) && checkTagsOrComps(obj, t)) {
+                            const idx = list.findIndex((o) => o.id === obj.id);
+                            if (idx == -1) {
+                                list.push(obj);
+                            }
                         }
-                    }
-                }));
-                events.push(_k.k.onUnuse((obj, id) => {
-                    if (isChild(obj) && !checkTagsOrComps(obj, t)) {
-                        const idx = list.findIndex((o) => o.id === obj.id);
-                        if (idx !== -1) {
-                            list.splice(idx, 1);
+                    }));
+                    events.push(_k.k.onUnuse((obj, id) => {
+                        if (isChild(obj) && !checkTagsOrComps(obj, t)) {
+                            const idx = list.findIndex((o) => o.id === obj.id);
+                            if (idx !== -1) {
+                                list.splice(idx, 1);
+                            }
                         }
-                    }
-                }));
+                    }));
+                }
+                // If tags are are components, we don't need to use these callbacks
+                // If tags are not components, we only need to use these callbacks if this query looks at tags
+                if (!treatTagsAsComponents && opts.only !== "comps") {
+                    events.push(_k.k.onTag((obj, tag) => {
+                        if (isChild(obj) && checkTagsOrComps(obj, t)) {
+                            const idx = list.findIndex((o) => o.id === obj.id);
+                            if (idx == -1) {
+                                list.push(obj);
+                            }
+                        }
+                    }));
+                    events.push(_k.k.onUntag((obj, tag) => {
+                        if (isChild(obj) && !checkTagsOrComps(obj, t)) {
+                            const idx = list.findIndex((o) => o.id === obj.id);
+                            if (idx !== -1) {
+                                list.splice(idx, 1);
+                            }
+                        }
+                    }));
+                }
                 this.onDestroy(() => {
                     for (const ev of events) {
                         ev.cancel();
@@ -642,7 +670,18 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             name: string,
             action: (...args: unknown[]) => void,
         ): KEventController {
-            const ctrl = events.on(name, action.bind(this));
+            const ctrl = ((func) => {
+                switch (name) {
+                    case "fixedUpdate":
+                        return fixedUpdateEvents.add(func);
+                    case "update":
+                        return updateEvents.add(func);
+                    case "draw":
+                        return drawEvents.add(func);
+                    default:
+                        return events.on(name, func);
+                }
+            })(action.bind(this));
             if (onCurCompCleanup) {
                 onCurCompCleanup(() => ctrl.cancel());
             }
@@ -651,7 +690,6 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
 
         trigger(name: string, ...args: unknown[]): void {
             events.trigger(name, ...args);
-            _k.game.objEvents.trigger(name, this, ...args);
         },
 
         destroy() {
@@ -706,6 +744,14 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
             return this.on("destroy", action);
         },
 
+        onTag(action: (id: string) => void): KEventController {
+            return this.on("tag", action);
+        },
+
+        onUntag(action: (id: string) => void): KEventController {
+            return this.on("untag", action);
+        },
+
         onUse(action: (id: string) => void): KEventController {
             return this.on("use", action);
         },
@@ -716,6 +762,9 @@ export function make<T>(comps: CompList<T> = []): GameObj<T> {
 
         clearEvents() {
             events.clear();
+            fixedUpdateEvents.clear();
+            updateEvents.clear();
+            drawEvents.clear();
         },
     };
 
