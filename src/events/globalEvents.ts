@@ -1,14 +1,12 @@
 // add an event to a tag
 
-import { type Asset, getFailedAssets } from "../assets";
-import { _k } from "../kaplay";
+import { type Asset, getFailedAssets } from "../assets/asset";
+import { _k } from "../shared";
 import type { Collision, GameObj, Tag } from "../types";
-import { KEventController, overload2 } from "../utils";
+import { overload2 } from "../utils/overload";
+import type { TupleWithoutFirst } from "../utils/types";
 import type { GameObjEventNames, GameObjEvents } from "./eventMap";
-
-export type TupleWithoutFirst<T extends any[]> = T extends [infer R, ...infer E]
-    ? E
-    : never;
+import { KEventController } from "./events";
 
 export function on<Ev extends GameObjEventNames>(
     event: Ev,

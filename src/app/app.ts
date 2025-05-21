@@ -1,31 +1,28 @@
-// everything related to canvas, game loop and input
+// App is everything related to canvas, game loop and input
 
 import type {
     Cursor,
     GamepadDef,
     GamepadStick,
+    KAPLAYOpt,
     Key,
     KGamepad,
     KGamepadButton,
     MouseButton,
 } from "../types";
 
-import { map, Vec2, vec2 } from "../math/math";
-
-import {
-    isEqOrIncludes,
-    KEventController,
-    KEventHandler,
-    overload2,
-    setHasOrIncludes,
-} from "../utils";
-
-import GAMEPAD_MAP from "../data/gamepad.json" assert { type: "json" };
-import type { AppEventMap } from "../game";
+import { GP_MAP } from "../constants/general";
+import type { AppEventMap } from "../events/eventMap";
+import { type KEventController, KEventHandler } from "../events/events";
+import { canvasToViewport } from "../gfx/viewport";
+import { map, vec2 } from "../math/math";
+import { Vec2 } from "../math/Vec2";
+import { _k } from "../shared";
+import { overload2 } from "../utils/overload";
+import { isEqOrIncludes, setHasOrIncludes } from "../utils/sets";
 import {
     type ButtonBinding,
     type ButtonsDef,
-    getLastInputDeviceType,
     parseButtonBindings,
 } from "./inputBindings";
 
@@ -60,8 +57,8 @@ class GamepadState {
 }
 
 class FPSCounter {
-    private dts: number[] = [];
-    private timer: number = 0;
+    dts: number[] = [];
+    timer: number = 0;
     fps: number = 0;
     tick(dt: number) {
         this.dts.push(dt);
@@ -79,9 +76,12 @@ class FPSCounter {
 export type App = ReturnType<typeof initApp>;
 export type AppState = ReturnType<typeof initAppState>;
 
-export let appState: AppState;
-
-const GP_MAP = GAMEPAD_MAP as Record<string, GamepadDef>;
+/**
+ * The App method names that will have a helper in GameObjRaw
+ */
+export type AppEvents = keyof {
+    [K in keyof App as K extends `on${any}` ? K : never]: [never];
+};
 
 export const initAppState = (opt: {
     canvas: HTMLCanvasElement;
@@ -112,6 +112,7 @@ export const initAppState = (opt: {
         skipTime: false,
         isHidden: false,
         numFrames: 0,
+        capsOn: false,
         mousePos: new Vec2(0),
         mouseDeltaPos: new Vec2(0),
         keyState: new ButtonState<Key>(),
@@ -130,21 +131,17 @@ export const initAppState = (opt: {
     };
 };
 
-export const initApp = (opt: {
-    canvas: HTMLCanvasElement;
-    touchToMouse?: boolean;
-    gamepads?: Record<string, GamepadDef>;
-    pixelDensity?: number;
-    maxFPS?: number;
-    buttons?: ButtonsDef;
-}) => {
+export const initApp = (
+    opt: {
+        canvas: HTMLCanvasElement;
+    } & KAPLAYOpt,
+) => {
     if (!opt.canvas) {
         throw new Error("Please provide a canvas");
     }
 
     const state = initAppState(opt);
-    appState = state;
-    parseButtonBindings();
+    parseButtonBindings(state);
 
     function dt() {
         return state.dt * state.timeScale;
@@ -191,7 +188,7 @@ export const initApp = (opt: {
             try {
                 const res = state.canvas
                     .requestPointerLock() as unknown as Promise<void>;
-                if (res.catch) {
+                if (res?.catch) {
                     res.catch((e) => console.error(e));
                 }
             } catch (e) {
@@ -234,6 +231,10 @@ export const initApp = (opt: {
             // @ts-ignore
             || document.webkitFullscreenElement === state.canvas;
     }
+
+    const isFocused = () => {
+        return document.activeElement === state.canvas;
+    };
 
     function quit() {
         state.stopped = true;
@@ -652,6 +653,10 @@ export const initApp = (opt: {
         );
     });
 
+    const getLastInputDeviceType = () => {
+        return state.lastInputDevice;
+    };
+
     function processInput() {
         state.events.trigger("input");
         state.keyState.down.forEach((k) => state.events.trigger("keyDown", k));
@@ -842,7 +847,13 @@ export const initApp = (opt: {
     const pd = opt.pixelDensity || 1;
 
     canvasEvents.mousemove = (e) => {
-        const mousePos = new Vec2(e.offsetX, e.offsetY);
+        // 🍝 Here we depend of GFX Context even if initGfx needs initApp for being used
+        // Letterbox creates some black bars so we need to remove that for calculating
+        // mouse position
+
+        // Ironically, e.offsetX and e.offsetY are the mouse position. Is not
+        // related to what we call the "offset" in this code
+        const mousePos = canvasToViewport(new Vec2(e.offsetX, e.offsetY));
         const mouseDeltaPos = new Vec2(e.movementX, e.movementY);
 
         if (isFullscreen()) {
@@ -937,6 +948,8 @@ export const initApp = (opt: {
     };
 
     canvasEvents.keydown = (e) => {
+        state.capsOn = e.getModifierState("CapsLock");
+
         if (PREVENT_DEFAULT_KEYS.has(e.key)) {
             e.preventDefault();
         }
@@ -1015,12 +1028,14 @@ export const initApp = (opt: {
         state.events.onOnce("input", () => {
             const touches = [...e.changedTouches];
             const box = state.canvas.getBoundingClientRect();
-            if (opt.touchToMouse !== false) {
-                state.mousePos = new Vec2(
-                    touches[0].clientX - box.x,
-                    touches[0].clientY - box.y,
-                );
 
+            if (opt.touchToMouse !== false) {
+                state.mousePos = canvasToViewport(
+                    new Vec2(
+                        touches[0].clientX - box.x,
+                        touches[0].clientY - box.y,
+                    ),
+                );
                 state.lastInputDevice = "mouse";
 
                 if (state.buttonsByMouse.has("left")) {
@@ -1033,10 +1048,16 @@ export const initApp = (opt: {
                 state.mouseState.press("left");
                 state.events.trigger("mousePress", "left");
             }
+
             touches.forEach((t) => {
                 state.events.trigger(
                     "touchStart",
-                    new Vec2(t.clientX - box.x, t.clientY - box.y),
+                    canvasToViewport(
+                        new Vec2(
+                            t.clientX - box.x,
+                            t.clientY - box.y,
+                        ),
+                    ),
                     t,
                 );
             });
@@ -1049,19 +1070,28 @@ export const initApp = (opt: {
         state.events.onOnce("input", () => {
             const touches = [...e.changedTouches];
             const box = state.canvas.getBoundingClientRect();
+
             if (opt.touchToMouse !== false) {
                 const lastMousePos = state.mousePos;
-                state.mousePos = new Vec2(
-                    touches[0].clientX - box.x,
-                    touches[0].clientY - box.y,
+                state.mousePos = canvasToViewport(
+                    new Vec2(
+                        touches[0].clientX - box.x,
+                        touches[0].clientY - box.y,
+                    ),
                 );
                 state.mouseDeltaPos = state.mousePos.sub(lastMousePos);
                 state.events.trigger("mouseMove");
             }
+
             touches.forEach((t) => {
                 state.events.trigger(
                     "touchMove",
-                    new Vec2(t.clientX - box.x, t.clientY - box.y),
+                    canvasToViewport(
+                        new Vec2(
+                            t.clientX - box.x,
+                            t.clientY - box.y,
+                        ),
+                    ),
                     t,
                 );
             });
@@ -1072,10 +1102,13 @@ export const initApp = (opt: {
         state.events.onOnce("input", () => {
             const touches = [...e.changedTouches];
             const box = state.canvas.getBoundingClientRect();
-            if (opt.touchToMouse !== false) {
-                state.mousePos = new Vec2(
-                    touches[0].clientX - box.x,
-                    touches[0].clientY - box.y,
+
+            if (opt.touchToMouse != false) {
+                state.mousePos = canvasToViewport(
+                    new Vec2(
+                        touches[0].clientX - box.x,
+                        touches[0].clientY - box.y,
+                    ),
                 );
                 state.mouseDeltaPos = new Vec2(0, 0);
 
@@ -1089,10 +1122,16 @@ export const initApp = (opt: {
                 state.mouseState.release("left");
                 state.events.trigger("mouseRelease", "left");
             }
+
             touches.forEach((t) => {
                 state.events.trigger(
                     "touchEnd",
-                    new Vec2(t.clientX - box.x, t.clientY - box.y),
+                    canvasToViewport(
+                        new Vec2(
+                            t.clientX - box.x,
+                            t.clientY - box.y,
+                        ),
+                    ),
                     t,
                 );
             });
@@ -1103,18 +1142,27 @@ export const initApp = (opt: {
         state.events.onOnce("input", () => {
             const touches = [...e.changedTouches];
             const box = state.canvas.getBoundingClientRect();
+
             if (opt.touchToMouse !== false) {
-                state.mousePos = new Vec2(
-                    touches[0].clientX - box.x,
-                    touches[0].clientY - box.y,
+                state.mousePos = canvasToViewport(
+                    new Vec2(
+                        touches[0].clientX - box.x,
+                        touches[0].clientY - box.y,
+                    ),
                 );
                 state.mouseState.release("left");
                 state.events.trigger("mouseRelease", "left");
             }
+
             touches.forEach((t) => {
                 state.events.trigger(
                     "touchEnd",
-                    new Vec2(t.clientX - box.x, t.clientY - box.y),
+                    canvasToViewport(
+                        new Vec2(
+                            t.clientX - box.x,
+                            t.clientY - box.y,
+                        ),
+                    ),
                     t,
                 );
             });
@@ -1232,6 +1280,7 @@ export const initApp = (opt: {
         isGamepadButtonPressed,
         isGamepadButtonDown,
         isGamepadButtonReleased,
+        isFocused,
         getGamepadStick,
         isButtonPressed,
         isButtonDown,

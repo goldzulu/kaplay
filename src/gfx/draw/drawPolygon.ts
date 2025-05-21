@@ -1,13 +1,14 @@
-import { _k } from "../../kaplay";
 import { Color } from "../../math/color";
-import { triangulate, Vec2 } from "../../math/math";
+import { triangulate } from "../../math/math";
+import { Vec2 } from "../../math/Vec2";
+import { _k } from "../../shared";
 import { BlendMode, type DrawPolygonOpt } from "../../types";
 import {
+    multRotate,
+    multScaleV,
+    multTranslateV,
     popTransform,
-    pushRotate,
-    pushScaleV,
     pushTransform,
-    pushTranslateV,
 } from "../stack";
 import { drawLines } from "./drawLine";
 import { drawRaw } from "./drawRaw";
@@ -24,10 +25,10 @@ export function drawPolygon(opt: DrawPolygonOpt) {
     }
 
     pushTransform();
-    pushTranslateV(opt.pos!);
-    pushScaleV(opt.scale);
-    pushRotate(opt.angle);
-    pushTranslateV(opt.offset!);
+    multTranslateV(opt.pos!);
+    multScaleV(opt.scale);
+    multRotate(opt.angle);
+    multTranslateV(opt.offset!);
 
     if (opt.fill !== false) {
         const color = opt.color ?? Color.WHITE;
@@ -69,7 +70,14 @@ export function drawPolygon(opt: DrawPolygonOpt) {
             }
         }
 
-        attributes.opacity.fill(opt.opacity ?? 1);
+        if (opt.opacities) {
+            for (let i = 0; i < opt.pts.length; i++) {
+                attributes.opacity[i] = opt.opacities[i];
+            }
+        }
+        else {
+            attributes.opacity.fill(opt.opacity ?? 1);
+        }
 
         /*const verts = opt.pts.map((pt, i) => ({
             pos: new Vec2(pt.x, pt.y),
@@ -109,7 +117,9 @@ export function drawPolygon(opt: DrawPolygonOpt) {
 
     if (opt.outline) {
         drawLines({
-            pts: [...opt.pts, opt.pts[0]],
+            pts: opt.pts[0].eq(opt.pts[opt.pts.length - 1])
+                ? opt.pts
+                : [...opt.pts, opt.pts[0]],
             radius: opt.radius,
             width: opt.outline.width,
             color: opt.outline.color,

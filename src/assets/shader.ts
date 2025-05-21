@@ -4,18 +4,16 @@ import {
     FRAG_TEMPLATE,
     VERT_TEMPLATE,
     VERTEX_FORMAT,
-} from "../constants";
-import { type GfxCtx } from "../gfx";
-import { _k } from "../kaplay";
+} from "../constants/general";
+import type { GfxCtx } from "../gfx/gfx";
 import { Color } from "../math/color";
-import { Mat23, Mat4, Vec2 } from "../math/math";
+import { Mat4 } from "../math/Mat4";
+import { Mat23 } from "../math/math";
+import { Vec2 } from "../math/Vec2";
+import { _k } from "../shared";
 import type { RenderProps } from "../types";
-import {
-    arrayIsColor,
-    arrayIsNumber,
-    arrayIsVec2,
-    getErrorMessage,
-} from "../utils";
+import { arrayIsColor, arrayIsNumber, arrayIsVec2 } from "../utils/asserts";
+import { getErrorMessage } from "../utils/log";
 import { fetchText, loadProgress } from "./asset";
 import { Asset } from "./asset";
 import { fixURL } from "./utils";
@@ -142,8 +140,6 @@ export class Shader {
                 gl.uniform2f(loc, val.x, val.y);
             }
             else if (Array.isArray(val)) {
-                const first = val[0];
-
                 if (arrayIsNumber(val)) {
                     gl.uniform1fv(loc, val as number[]);
                 }
